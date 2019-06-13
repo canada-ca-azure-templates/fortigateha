@@ -1,0 +1,47 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "fwObject": {
+            "value": {
+                "vmKeyVault": {
+                    "keyVaultResourceGroupName": "PwS2-validate-fortigateha-RG",
+                    "keyVaultName": "PwS2-validate-[unique]"
+                },
+                "FortiGateName": "validate01",
+                "adminUsername": "fwadmin",
+                "adminSecret": "fwpassword",
+                "FortiGateImageSKU": "fortinet_fg-vm",
+                "FortiGateImageVersion": "latest",
+                "instanceType": "Standard_F4s",
+                "publicIPAddressName": "validate01-publicip1",
+                "publicIP2AddressName": "validate01-publicip2",
+                "publicIPNewOrExistingOrNone": "new",
+                "publicIP2NewOrExistingOrNone": "new",
+                "publicIPResourceGroup": "PwS2-validate-fortigateha-RG",
+                "publicIP2ResourceGroup": "PwS2-validate-fortigateha-RG",
+                "location": "canadacentral",
+                "vnetNewOrExisting": "existing",
+                "vnetName": "PwS2-validate-fortigateHA-VNET",
+                "vnetResourceGroup": "PwS2-validate-fortigateha-RG",
+                "Subnet1Name": "outside",
+                "Subnet2Name": "inside",
+                "vnetAddressPrefixes": [
+                    "10.250.0.0/20"
+                ],
+                "Subnet1Prefix": "10.250.1.0/24",
+                "Subnet2Prefix": "10.250.2.0/24",
+                "firewall1Config": "Y29uZmlnIHN5c3RlbSBnbG9iYWwNCiAgICBzZXQgYWRtaW4tc3BvcnQgODQ0Mw0KICAgIHNldCBhbGlhcyAiUHdQMEZXQ29yZTAxIg0KICAgIHNldCBob3N0bmFtZSAiUHdQMEZXQ29yZTAxIg0KICAgIHNldCB0aW1lem9uZSAwNA0KZW5kDQpjb25maWcgc3lzdGVtIGludGVyZmFjZQ0KICAgIGVkaXQgInBvcnQxIg0KICAgICAgICBzZXQgdmRvbSAicm9vdCINCiAgICAgICAgc2V0IG1vZGUgZGhjcA0KICAgICAgICBzZXQgYWxsb3dhY2Nlc3MgcGluZyBodHRwcyBzc2ggaHR0cCBmZ2ZtIHByb2JlLXJlc3BvbnNlDQogICAgICAgIHNldCB0eXBlIHBoeXNpY2FsDQogICAgICAgIHNldCBkZXNjcmlwdGlvbiAiT3V0c2lkZSINCiAgICAgICAgc2V0IGFsaWFzICJPdXRzaWRlIg0KICAgICAgICBzZXQgc25tcC1pbmRleCAxDQogICAgbmV4dA0KICAgIGVkaXQgInBvcnQyIg0KICAgICAgICBzZXQgdmRvbSAicm9vdCINCiAgICAgICAgc2V0IG1vZGUgZGhjcA0KICAgICAgICBzZXQgYWxsb3dhY2Nlc3MgcGluZyBodHRwcyBzc2ggaHR0cCBmZ2ZtIHByb2JlLXJlc3BvbnNlDQogICAgICAgIHNldCB0eXBlIHBoeXNpY2FsDQogICAgICAgIHNldCBkZXNjcmlwdGlvbiAiQ29yZVRvU3Bva2VzIg0KICAgICAgICBzZXQgYWxpYXMgIkNvcmVUb1Nwb2tlcyINCiAgICAgICAgc2V0IHNubXAtaW5kZXggMg0KICAgICAgICBzZXQgZGVmYXVsdGd3IGRpc2FibGUNCiAgICBuZXh0DQplbmQNCmNvbmZpZyBzeXMgYXV0by1zY2FsZQ0KICAgIHNldCBzdGF0IGVuYWJsZQ0KICAgIHNldCByb2xlIG1hc3Rlcg0KICAgIHNldCBzeW5jLWludCBwb3J0Mg0KICAgIHNldCBwc2tzZWNyZXQgQ2FuYWRhMTIzNDU2IQ0KZW5k",
+                "firewall2Config": "Y29uZmlnIHN5c3RlbSBnbG9iYWwNCiAgICBzZXQgYWRtaW4tc3BvcnQgODQ0Mw0KICAgIHNldCBhbGlhcyAiUHdQMEZXQ29yZTAyIg0KICAgIHNldCBob3N0bmFtZSAiUHdQMEZXQ29yZTAyIg0KICAgIHNldCB0aW1lem9uZSAwNA0KZW5kDQpjb25maWcgc3lzdGVtIGludGVyZmFjZQ0KICAgIGVkaXQgInBvcnQxIg0KICAgICAgICBzZXQgdmRvbSAicm9vdCINCiAgICAgICAgc2V0IG1vZGUgZGhjcA0KICAgICAgICBzZXQgYWxsb3dhY2Nlc3MgcGluZyBodHRwcyBzc2ggaHR0cCBmZ2ZtIHByb2JlLXJlc3BvbnNlDQogICAgICAgIHNldCB0eXBlIHBoeXNpY2FsDQogICAgICAgIHNldCBkZXNjcmlwdGlvbiAiT3V0c2lkZSINCiAgICAgICAgc2V0IGFsaWFzICJPdXRzaWRlIg0KICAgICAgICBzZXQgc25tcC1pbmRleCAxDQogICAgbmV4dA0KICAgIGVkaXQgInBvcnQyIg0KICAgICAgICBzZXQgdmRvbSAicm9vdCINCiAgICAgICAgc2V0IG1vZGUgZGhjcA0KICAgICAgICBzZXQgYWxsb3dhY2Nlc3MgcGluZyBodHRwcyBzc2ggaHR0cCBmZ2ZtIHByb2JlLXJlc3BvbnNlDQogICAgICAgIHNldCB0eXBlIHBoeXNpY2FsDQogICAgICAgIHNldCBkZXNjcmlwdGlvbiAiQ29yZVRvU3Bva2VzIg0KICAgICAgICBzZXQgYWxpYXMgIkNvcmVUb1Nwb2tlcyINCiAgICAgICAgc2V0IHNubXAtaW5kZXggMg0KICAgICAgICBzZXQgZGVmYXVsdGd3IGRpc2FibGUNCiAgICBuZXh0DQplbmQNCmNvbmZpZyBzeXMgYXV0by1zY2FsZQ0KICAgIHNldCBzdGF0IGVuYWJsZQ0KICAgIHNldCBtYXN0ZXItaXAgMTAuMjUwLjIuNQ0KICAgIHNldCBzeW5jLWludCBwb3J0Mg0KICAgIHNldCBwc2tzZWNyZXQgQ2FuYWRhMTIzNDU2IQ0KZW5k",
+                "tagValues": {
+                    "Owner": "build.pipeline@tpsgc-pwgsc.gc.ca",
+                    "CostCenter": "PSPC-EA",
+                    "Enviroment": "Validate",
+                    "Classification": "Unclassified",
+                    "Organizations": "PSPC-CCC-E&O",
+                    "DeploymentVersion": "2018-12-14-01"
+                }
+            }
+        }
+    }
+}

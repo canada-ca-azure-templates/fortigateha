@@ -1,0 +1,780 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "fwObject": {
+            "type": "object"
+        },
+        "containerSasToken": {
+            "type": "string",
+            "defaultValue": ""
+        },
+        "_artifactsLocation": {
+            "type": "string",
+            "metadata": {
+                "description": "The base URI where artifacts required by this template are located including a trailing '/'"
+            },
+            "defaultValue": "[deployment().properties.templateLink.uri]"
+        },
+        "adminPassword": {
+            "defaultValue": "",
+            "type": "securestring",
+            "metadata": {
+                "description": "Password for the Virtual Machine."
+            }
+        }
+    },
+    "variables": {
+        "subnet1Ref": "[resourceId(parameters('fwObject').vnetResourceGroup,'Microsoft.Network/virtualNetworks/subnets', parameters('fwObject').vnetName, parameters('fwObject').Subnet1Name)]",
+        "subnet2Ref": "[resourceId(parameters('fwObject').vnetResourceGroup,'Microsoft.Network/virtualNetworks/subnets', parameters('fwObject').vnetName, parameters('fwObject').Subnet2Name)]",
+        "publicIPID": "[resourceID(parameters('fwObject').publicIPResourceGroup,'Microsoft.Network/publicIPAddresses', parameters('fwObject').publicIPAddressName)]",
+        "publicIP2ID": "[resourceID(parameters('fwObject').publicIP2ResourceGroup,'Microsoft.Network/publicIPAddresses', parameters('fwObject').publicIP2AddressName)]",
+        "NSGName": "[concat(parameters('fwObject').FortiGateName,'-NSG')]",
+        "compute_VM_fg1_Name": "[variables('vmName')]",
+        "compute_VM_fg2_Name": "[variables('vm2Name')]",
+        "network_NIC_fg11_Name": "[concat(variables('vmName'),'Nic0')]",
+        "network_NIC_fg11_Id": "[resourceId('Microsoft.Network/networkInterfaces',variables('network_NIC_fg11_Name'))]",
+        "network_NIC_fg12_Name": "[concat(variables('vmName'),'Nic1')]",
+        "network_NIC_fg12_Id": "[resourceId('Microsoft.Network/networkInterfaces',variables('network_NIC_fg12_Name'))]",
+        "network_NIC_fg21_Name": "[concat(variables('vm2Name'),'Nic0')]",
+        "network_NIC_fg21_Id": "[resourceId('Microsoft.Network/networkInterfaces',variables('network_NIC_fg21_Name'))]",
+        "network_NIC_fg22_Name": "[concat(variables('vm2Name'),'Nic1')]",
+        "network_NIC_fg22_Id": "[resourceId('Microsoft.Network/networkInterfaces',variables('network_NIC_fg22_Name'))]",
+        "internalLBName": "[concat(parameters('fwObject').FortiGateName,'-InternalLoadBalancer')]",
+        "internalLBFE2Name": "[concat(parameters('fwObject').FortiGateName,'-ILB-',parameters('fwObject').Subnet2Name,'-FrontEnd')]",
+        "internalLBBE2Name": "[concat(parameters('fwObject').FortiGateName,'-ILB-',parameters('fwObject').Subnet2Name,'-BackEnd')]",
+        "internalLBid": "[resourceID('Microsoft.Network/loadBalancers',variables('internalLBName'))]",
+        "internalLB_BE2Id": "[concat(variables('internalLBid'),'/backendAddressPools/',variables('internalLBBE2Name'))]",
+        "network_LB_Public_NatRule_FGAdminPerm_fg1_Name": "[concat(variables('VMName'),'FGAdminPerm')]",
+        "network_LB_Public_NatRule_FGAdminPerm_fg1_Id": "[concat(variables('network_LB_Public_Id'),'/inboundNatRules/',variables('network_LB_Public_NatRule_FGAdminPerm_fg1_Name'))]",
+        "network_LB_Public_NatRule_SSH_fg1_Name": "[concat(variables('VMName'),'SSH')]",
+        "network_LB_Public_NatRule_SSH_fg1_Id": "[concat(variables('network_LB_Public_Id'),'/inboundNatRules/',variables('network_LB_Public_NatRule_SSH_fg1_Name'))]",
+        "network_LB_Public_Name": "[concat(parameters('fwObject').FortiGateName,'-publicLoadBalancer')]",
+        "network_LB_Public_Id": "[resourceId('Microsoft.Network/loadBalancers',variables('network_LB_Public_Name'))]",
+        "network_LB_Public_NatRule_FGAdminPerm_fg2_Name": "[concat(variables('VM2Name'),'FGAdminPerm')]",
+        "network_LB_Public_NatRule_FGAdminPerm_fg2_Id": "[concat(variables('network_LB_Public_Id'),'/inboundNatRules/',variables('network_LB_Public_NatRule_FGAdminPerm_fg2_Name'))]",
+        "network_LB_Public_NatRule_SSH_fg2_Name": "[concat(variables('VM2Name'),'SSH')]",
+        "network_LB_Public_NatRule_SSH_fg2_Id": "[concat(variables('network_LB_Public_Id'),'/inboundNatRules/',variables('network_LB_Public_NatRule_SSH_fg2_Name'))]",
+        "network_LB_Public_FEName": "[concat(parameters('fwObject').FortiGateName,'publicLBFE')]",
+        "network_LB_Public_FE2Name": "[concat(parameters('fwObject').FortiGateName,'publicLBFE2')]",
+        "network_LB_Public_FE2Id": "[concat(variables('network_LB_Public_Id'),'/frontendIPConfigurations/',variables('network_LB_Public_FE2Name'))]",
+        "network_LB_Public_BEName": "[concat(parameters('fwObject').FortiGateName,'publicLBBE')]",
+        "network_LB_Public_BEId": "[concat(variables('network_LB_Public_Id'),'/backendAddressPools/',variables('network_LB_Public_BEName'))]",
+        "network_LB_Public_FEId": "[concat(variables('network_LB_Public_Id'),'/frontendIPConfigurations/',variables('network_LB_Public_FEName'))]",
+        "vmName": "[concat(parameters('fwObject').FortiGateName,'-A')]",
+        "vm2Name": "[concat(parameters('fwObject').FortiGateName,'-B')]",
+        "compute_AvailabilitySet_FG_Name": "[concat(parameters('fwObject').FortiGateName,'-AvailabilitySet')]",
+        "compute_AvailabilitySet_FG_Id": "[resourceId('Microsoft.Compute/availabilitySets', variables('compute_AvailabilitySet_FG_Name'))]"
+    },
+    "functions": [
+        {
+            "namespace": "pspc",
+            "members": {
+                "replaceInObject": {
+                    "parameters": [
+                        {
+                            "name": "object",
+                            "type": "object"
+                        },
+                        {
+                            "name": "search",
+                            "type": "string"
+                        },
+                        {
+                            "name": "replace",
+                            "type": "string"
+                        }
+                    ],
+                    "output": {
+                        "type": "object",
+                        "value": "[json(replace(string(parameters('object')), parameters('search'), parameters('replace')))]"
+                    }
+                }
+            }
+        }
+    ],
+    "resources": [
+        {
+            "type": "Microsoft.Compute/availabilitySets",
+            "name": "[variables('compute_AvailabilitySet_FG_Name')]",
+            "apiVersion": "2017-03-30",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "platformFaultDomainCount": 2,
+                "platformUpdateDomainCount": 2
+            },
+            "sku": {
+                "name": "Aligned"
+            }
+        },
+        {
+            "apiVersion": "2018-02-01",
+            "tags": "[parameters('fwObject').tagValues]",
+            "type": "Microsoft.Network/networkSecurityGroups",
+            "name": "[variables('NSGName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "securityRules": [
+                    {
+                        "name": "AllowAllInbound",
+                        "properties": {
+                            "description": "Allow all in",
+                            "protocol": "*",
+                            "sourcePortRange": "*",
+                            "destinationPortRange": "*",
+                            "sourceAddressPrefix": "*",
+                            "destinationAddressPrefix": "*",
+                            "access": "Allow",
+                            "priority": 100,
+                            "direction": "Inbound"
+                        }
+                    },
+                    {
+                        "name": "AllowAllOutbound",
+                        "properties": {
+                            "description": "Allow all out",
+                            "protocol": "*",
+                            "sourcePortRange": "*",
+                            "destinationPortRange": "*",
+                            "sourceAddressPrefix": "*",
+                            "destinationAddressPrefix": "*",
+                            "access": "Allow",
+                            "priority": 105,
+                            "direction": "Outbound"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Network/loadBalancers",
+            "name": "[variables('internalLBName')]",
+            "apiVersion": "2018-02-01",
+            "tags": "[parameters('fwObject').tagValues]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "Standard"
+            },
+            "properties": {
+                "frontendIPConfigurations": [
+                    {
+                        "name": "[variables('internalLBFE2Name')]",
+                        "properties": {
+                            "privateIPAllocationMethod": "Dynamic",
+                            "subnet": {
+                                "id": "[variables('subnet2Ref')]"
+                            }
+                        }
+                    }
+                ],
+                "backendAddressPools": [
+                    {
+                        "name": "[variables('internalLBBE2Name')]"
+                    }
+                ],
+                "loadBalancingRules": [
+                    {
+                        "properties": {
+                            "frontendIPConfiguration": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('internalLBName')), '/frontendIpConfigurations/', variables('internalLBFE2Name'))]"
+                            },
+                            "backendAddressPool": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('internalLBName')), '/backendAddressPools/', variables('internalLBBE2Name'))]"
+                            },
+                            "probe": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('internalLBName')), '/probes/lbprobe')]"
+                            },
+                            "protocol": "all",
+                            "frontendPort": 0,
+                            "backendPort": 0,
+                            "enableFloatingIP": true,
+                            "idleTimeoutInMinutes": 15
+                        },
+                        "name": "lbruleFE2all"
+                    }
+                ],
+                "probes": [
+                    {
+                        "properties": {
+                            "protocol": "Tcp",
+                            "port": 8008,
+                            "intervalInSeconds": 5,
+                            "numberOfProbes": 2
+                        },
+                        "name": "lbprobe"
+                    }
+                ]
+            }
+        },
+        {
+            "condition": "[equals(parameters('fwObject').publicIPNewOrExistingOrNone, 'new')]",
+            "type": "Microsoft.Network/publicIPAddresses",
+            "apiVersion": "2018-02-01",
+            "tags": "[parameters('fwObject').tagValues]",
+            "name": "[parameters('fwObject').publicIPAddressName]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "Standard"
+            },
+            "properties": {
+                "publicIPAllocationMethod": "Static"
+            }
+        },
+        {
+            "condition": "[equals(parameters('fwObject').publicIP2NewOrExistingOrNone, 'new')]",
+            "type": "Microsoft.Network/publicIPAddresses",
+            "apiVersion": "2018-02-01",
+            "tags": "[parameters('fwObject').tagValues]",
+            "name": "[parameters('fwObject').publicIP2AddressName]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "Standard"
+            },
+            "properties": {
+                "publicIPAllocationMethod": "Static"
+            }
+        },
+        {
+            "type": "Microsoft.Network/loadBalancers",
+            "name": "[variables('network_LB_Public_Name')]",
+            "apiVersion": "2018-02-01",
+            "tags": "[parameters('fwObject').tagValues]",
+            "location": "[resourceGroup().location]",
+            "sku": {
+                "name": "Standard"
+            },
+            "dependsOn": [
+                "[variables('publicIPID')]",
+                "[variables('publicIP2ID')]"
+            ],
+            "properties": {
+                "frontendIPConfigurations": [
+                    {
+                        "name": "[variables('network_LB_Public_FEName')]",
+                        "properties": {
+                            "publicIPAddress": {
+                                "id": "[variables('publicIPID')]"
+                            }
+                        }
+                    },
+                    {
+                        "name": "[variables('network_LB_Public_FE2Name')]",
+                        "properties": {
+                            "publicIPAddress": {
+                                "id": "[variables('publicIP2ID')]"
+                            }
+                        }
+                    }
+                ],
+                "backendAddressPools": [
+                    {
+                        "name": "[variables('network_LB_Public_BEName')]"
+                    }
+                ],
+                "loadBalancingRules": [
+                    {
+                        "properties": {
+                            "frontendIPConfiguration": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('network_LB_Public_Name')), '/frontendIpConfigurations/', variables('network_LB_Public_FEName'))]"
+                            },
+                            "backendAddressPool": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('network_LB_Public_Name')), '/backendAddressPools/', variables('network_LB_Public_BEName'))]"
+                            },
+                            "probe": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('network_LB_Public_Name')), '/probes/lbprobe')]"
+                            },
+                            "protocol": "Tcp",
+                            "frontendPort": 80,
+                            "backendPort": 80,
+                            "enableFloatingIP": true,
+                            "idleTimeoutInMinutes": 15
+                        },
+                        "name": "PublicLBRule-FE1-http"
+                    },
+                    {
+                        "properties": {
+                            "frontendIPConfiguration": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('network_LB_Public_Name')), '/frontendIpConfigurations/', variables('network_LB_Public_FE2Name'))]"
+                            },
+                            "backendAddressPool": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('network_LB_Public_Name')), '/backendAddressPools/', variables('network_LB_Public_BEName'))]"
+                            },
+                            "probe": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('network_LB_Public_Name')), '/probes/lbprobe')]"
+                            },
+                            "protocol": "Tcp",
+                            "frontendPort": 80,
+                            "backendPort": 80,
+                            "enableFloatingIP": true,
+                            "idleTimeoutInMinutes": 15
+                        },
+                        "name": "PublicLBRule-FE2-http"
+                    },
+                    {
+                        "properties": {
+                            "frontendIPConfiguration": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('network_LB_Public_Name')), '/frontendIpConfigurations/', variables('network_LB_Public_FEName'))]"
+                            },
+                            "backendAddressPool": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('network_LB_Public_Name')), '/backendAddressPools/', variables('network_LB_Public_BEName'))]"
+                            },
+                            "probe": {
+                                "id": "[concat(resourceId('Microsoft.Network/loadBalancers', variables('network_LB_Public_Name')), '/probes/lbprobe')]"
+                            },
+                            "protocol": "Udp",
+                            "frontendPort": 10551,
+                            "backendPort": 10551,
+                            "enableFloatingIP": false,
+                            "idleTimeoutInMinutes": 15
+                        },
+                        "name": "PublicLBRule-FE1-udp10551"
+                    }
+                ],
+                "inboundNatRules": [
+                    {
+                        "name": "[variables('network_LB_Public_NatRule_SSH_fg1_Name')]",
+                        "properties": {
+                            "frontendIPConfiguration": {
+                                "id": "[variables('network_LB_Public_FEId')]"
+                            },
+                            "protocol": "Tcp",
+                            "frontendPort": 22,
+                            "backendPort": 22,
+                            "enableFloatingIP": false
+                        }
+                    },
+                    {
+                        "name": "[variables('network_LB_Public_NatRule_FGAdminPerm_fg1_Name')]",
+                        "properties": {
+                            "frontendIPConfiguration": {
+                                "id": "[variables('network_LB_Public_FEId')]"
+                            },
+                            "protocol": "Tcp",
+                            "frontendPort": 8443,
+                            "backendPort": 8443,
+                            "enableFloatingIP": false
+                        }
+                    },
+                    {
+                        "name": "[variables('network_LB_Public_NatRule_SSH_fg2_Name')]",
+                        "properties": {
+                            "frontendIPConfiguration": {
+                                "id": "[variables('network_LB_Public_FE2Id')]"
+                            },
+                            "protocol": "Tcp",
+                            "frontendPort": 22,
+                            "backendPort": 22,
+                            "enableFloatingIP": false
+                        }
+                    },
+                    {
+                        "name": "[variables('network_LB_Public_NatRule_FGAdminPerm_fg2_Name')]",
+                        "properties": {
+                            "frontendIPConfiguration": {
+                                "id": "[variables('network_LB_Public_FE2Id')]"
+                            },
+                            "protocol": "Tcp",
+                            "frontendPort": 8443,
+                            "backendPort": 8443,
+                            "enableFloatingIP": false
+                        }
+                    }
+                ],
+                "probes": [
+                    {
+                        "properties": {
+                            "protocol": "Tcp",
+                            "port": 8008,
+                            "intervalInSeconds": 5,
+                            "numberOfProbes": 2
+                        },
+                        "name": "lbprobe"
+                    }
+                ]
+            }
+        },
+        {
+            "apiVersion": "2018-02-01",
+            "tags": "[parameters('fwObject').tagValues]",
+            "type": "Microsoft.Network/networkInterfaces",
+            "name": "[variables('network_NIC_fg11_Name')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[variables('network_LB_Public_Id')]",
+                "[variables('NSGName')]"
+            ],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAllocationMethod": "Dynamic",
+                            "subnet": {
+                                "id": "[variables('subnet1Ref')]"
+                            },
+                            "loadBalancerBackendAddressPools": [
+                                {
+                                    "id": "[variables('network_LB_Public_BEId')]"
+                                }
+                            ],
+                            "loadBalancerInboundNatRules": [
+                                {
+                                    "id": "[variables('network_LB_Public_NatRule_SSH_fg1_Id')]"
+                                },
+                                {
+                                    "id": "[variables('network_LB_Public_NatRule_FGAdminPerm_fg1_Id')]"
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "enableIPForwarding": true,
+                "networkSecurityGroup": {
+                    "id": "[resourceID('Microsoft.Network/networkSecurityGroups/',variables('NSGName'))]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Resources/deployments",
+            "name": "UpdateNIC11",
+            "apiVersion": "2017-08-01",
+            "dependsOn": [
+                "[variables('network_NIC_fg11_Name')]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {},
+                    "variables": {},
+                    "resources": [
+                        {
+                            "type": "Microsoft.Network/networkInterfaces",
+                            "name": "[variables('network_NIC_fg11_Name')]",
+                            "apiVersion": "2018-03-01",
+                            "location": "[resourceGroup().location]",
+                            "properties": "[pspc.replaceInObject(reference(concat('Microsoft.Network/networkInterfaces/', variables('network_NIC_fg11_Name'))), '\"privateIPAllocationMethod\":\"Dynamic\"', '\"privateIPAllocationMethod\":\"Static\"')]"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "apiVersion": "2018-02-01",
+            "tags": "[parameters('fwObject').tagValues]",
+            "type": "Microsoft.Network/networkInterfaces",
+            "name": "[variables('network_NIC_fg12_Name')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[concat('Microsoft.Network/loadBalancers/', variables('internalLBName'))]",
+                "[variables('NSGName')]"
+            ],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAllocationMethod": "Dynamic",
+                            "subnet": {
+                                "id": "[variables('subnet2Ref')]"
+                            },
+                            "loadBalancerBackendAddressPools": [
+                                {
+                                    "id": "[variables('internalLB_BE2Id')]"
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "enableIPForwarding": true,
+                "networkSecurityGroup": {
+                    "id": "[resourceID('Microsoft.Network/networkSecurityGroups/',variables('NSGName'))]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Resources/deployments",
+            "name": "UpdateNIC12",
+            "apiVersion": "2017-08-01",
+            "dependsOn": [
+                "[variables('network_NIC_fg12_Name')]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {},
+                    "variables": {},
+                    "resources": [
+                        {
+                            "type": "Microsoft.Network/networkInterfaces",
+                            "name": "[variables('network_NIC_fg12_Name')]",
+                            "apiVersion": "2018-03-01",
+                            "location": "[resourceGroup().location]",
+                            "properties": "[pspc.replaceInObject(reference(concat('Microsoft.Network/networkInterfaces/', variables('network_NIC_fg12_Name'))), '\"privateIPAllocationMethod\":\"Dynamic\"', '\"privateIPAllocationMethod\":\"Static\"')]"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "apiVersion": "2018-02-01",
+            "tags": "[parameters('fwObject').tagValues]",
+            "type": "Microsoft.Network/networkInterfaces",
+            "name": "[variables('network_NIC_fg21_Name')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[variables('network_LB_Public_Id')]",
+                "[variables('network_NIC_fg11_Name')]",
+                "[variables('NSGName')]"
+            ],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAllocationMethod": "Dynamic",
+                            "subnet": {
+                                "id": "[variables('subnet1Ref')]"
+                            },
+                            "loadBalancerBackendAddressPools": [
+                                {
+                                    "id": "[variables('network_LB_Public_BEId')]"
+                                }
+                            ],
+                            "loadBalancerInboundNatRules": [
+                                {
+                                    "id": "[variables('network_LB_Public_NatRule_SSH_fg2_Id')]"
+                                },
+                                {
+                                    "id": "[variables('network_LB_Public_NatRule_FGAdminPerm_fg2_Id')]"
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "enableIPForwarding": true,
+                "networkSecurityGroup": {
+                    "id": "[resourceID('Microsoft.Network/networkSecurityGroups/',variables('NSGName'))]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Resources/deployments",
+            "name": "UpdateNIC21",
+            "apiVersion": "2017-08-01",
+            "dependsOn": [
+                "[variables('network_NIC_fg21_Name')]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {},
+                    "variables": {},
+                    "resources": [
+                        {
+                            "type": "Microsoft.Network/networkInterfaces",
+                            "name": "[variables('network_NIC_fg21_Name')]",
+                            "apiVersion": "2018-03-01",
+                            "location": "[resourceGroup().location]",
+                            "properties": "[pspc.replaceInObject(reference(concat('Microsoft.Network/networkInterfaces/', variables('network_NIC_fg21_Name'))), '\"privateIPAllocationMethod\":\"Dynamic\"', '\"privateIPAllocationMethod\":\"Static\"')]"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "apiVersion": "2018-02-01",
+            "tags": "[parameters('fwObject').tagValues]",
+            "type": "Microsoft.Network/networkInterfaces",
+            "name": "[variables('network_NIC_fg22_Name')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[concat('Microsoft.Network/loadBalancers/', variables('internalLBName'))]",
+                "[variables('network_NIC_fg12_Name')]",
+                "[variables('NSGName')]"
+            ],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "ipconfig1",
+                        "properties": {
+                            "privateIPAllocationMethod": "Dynamic",
+                            "subnet": {
+                                "id": "[variables('subnet2Ref')]"
+                            },
+                            "loadBalancerBackendAddressPools": [
+                                {
+                                    "id": "[variables('internalLB_BE2Id')]"
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "enableIPForwarding": true,
+                "networkSecurityGroup": {
+                    "id": "[resourceID('Microsoft.Network/networkSecurityGroups/',variables('NSGName'))]"
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Resources/deployments",
+            "name": "UpdateNIC22",
+            "apiVersion": "2017-08-01",
+            "dependsOn": [
+                "[variables('network_NIC_fg22_Name')]"
+            ],
+            "properties": {
+                "mode": "Incremental",
+                "template": {
+                    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {},
+                    "variables": {},
+                    "resources": [
+                        {
+                            "type": "Microsoft.Network/networkInterfaces",
+                            "name": "[variables('network_NIC_fg22_Name')]",
+                            "apiVersion": "2018-03-01",
+                            "location": "[resourceGroup().location]",
+                            "properties": "[pspc.replaceInObject(reference(concat('Microsoft.Network/networkInterfaces/', variables('network_NIC_fg22_Name'))), '\"privateIPAllocationMethod\":\"Dynamic\"', '\"privateIPAllocationMethod\":\"Static\"')]"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "name": "[variables('compute_VM_fg1_Name')]",
+            "apiVersion": "2017-03-30",
+            "tags": "[parameters('fwObject').tagValues]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "UpdateNIC11",
+                "UpdateNIC12"
+            ],
+            "plan": {
+                "name": "[parameters('fwObject').FortiGateImageSKU]",
+                "publisher": "fortinet",
+                "product": "fortinet_fortigate-vm_v5"
+            },
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "[parameters('fwObject').instanceType]"
+                },
+                "availabilitySet": {
+                    "id": "[variables('compute_AvailabilitySet_FG_Id')]"
+                },
+                "osProfile": {
+                    "computerName": "[variables('compute_VM_fg1_Name')]",
+                    "adminUsername": "[parameters('fwObject').adminUsername]",
+                    "adminPassword": "[parameters('adminPassword')]",
+                    "customData": "[parameters('fwObject').firewall1Config]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "fortinet",
+                        "offer": "fortinet_fortigate-vm_v5",
+                        "sku": "[parameters('fwObject').FortiGateImageSKU]",
+                        "version": "[parameters('fwObject').FortiGateImageVersion]"
+                    },
+                    "osDisk": {
+                        "createOption": "FromImage"
+                    },
+                    "dataDisks": [
+                        {
+                            "diskSizeGB": 30,
+                            "lun": 0,
+                            "createOption": "Empty"
+                        }
+                    ]
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "properties": {
+                                "primary": true
+                            },
+                            "id": "[variables('network_NIC_fg11_Id')]"
+                        },
+                        {
+                            "properties": {
+                                "primary": false
+                            },
+                            "id": "[variables('network_NIC_fg12_Id')]"
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "type": "Microsoft.Compute/virtualMachines",
+            "name": "[variables('compute_VM_fg2_Name')]",
+            "apiVersion": "2017-03-30",
+            "tags": "[parameters('fwObject').tagValues]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "UpdateNIC21",
+                "UpdateNIC22"
+            ],
+            "plan": {
+                "name": "[parameters('fwObject').FortiGateImageSKU]",
+                "publisher": "fortinet",
+                "product": "fortinet_fortigate-vm_v5"
+            },
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "[parameters('fwObject').instanceType]"
+                },
+                "availabilitySet": {
+                    "id": "[variables('compute_AvailabilitySet_FG_Id')]"
+                },
+                "osProfile": {
+                    "computerName": "[variables('compute_VM_fg2_Name')]",
+                    "adminUsername": "[parameters('fwObject').adminUsername]",
+                    "adminPassword": "[parameters('adminPassword')]",
+                    "customData": "[parameters('fwObject').firewall2Config]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "fortinet",
+                        "offer": "fortinet_fortigate-vm_v5",
+                        "sku": "[parameters('fwObject').FortiGateImageSKU]",
+                        "version": "[parameters('fwObject').FortiGateImageVersion]"
+                    },
+                    "osDisk": {
+                        "createOption": "FromImage"
+                    },
+                    "dataDisks": [
+                        {
+                            "diskSizeGB": 30,
+                            "lun": 0,
+                            "createOption": "Empty"
+                        }
+                    ]
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "properties": {
+                                "primary": true
+                            },
+                            "id": "[variables('network_NIC_fg21_Id')]"
+                        },
+                        {
+                            "properties": {
+                                "primary": false
+                            },
+                            "id": "[variables('network_NIC_fg22_Id')]"
+                        }
+                    ]
+                }
+            }
+        }
+    ],
+    "outputs": {}
+}

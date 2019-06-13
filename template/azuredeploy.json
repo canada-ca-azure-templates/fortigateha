@@ -1,0 +1,108 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "containerSasToken": {
+            "type": "string",
+            "defaultValue": ""
+        },
+        "_artifactsLocation": {
+            "type": "string",
+            "metadata": {
+                "description": "The base URI where artifacts required by this template are located including a trailing '/'"
+            },
+            "defaultValue": "[deployment().properties.templateLink.uri]"
+        },
+        "_debugLevel": {
+            "type": "string",
+            "defaultValue": "none"
+        },
+        "fwObject": {
+            "type": "object",
+            "metadata": {
+                "description": "Object of firewall parameters."
+            }
+        }
+    },
+    "variables": {
+        "baseVMUrl": "[concat(uri(parameters('_artifactsLocation'), 'fortigateHA.json'), parameters('containerSasToken'))]"
+    },
+    "functions": [
+        {
+            "namespace": "pspc",
+            "members": {
+                "getResourceGroupID": {
+                    "parameters": [
+                        {
+                            "name": "resourceGroupName",
+                            "type": "string"
+                        }
+                    ],
+                    "output": {
+                        "type": "string",
+                        "value": "[uniqueString(concat('/subscriptions/', subscription().subscriptionId, '/resourceGroups/', parameters('resourceGroupName')))]"
+                    }
+                },
+                "getUniqueKeyvaultName": {
+                    "parameters": [
+                        {
+                            "name": "keyVaultName",
+                            "type": "string"
+                        },
+                        {
+                            "name": "resourceGroupID",
+                            "type": "string"
+                        }
+                    ],
+                    "output": {
+                        "type": "string",
+                        "value": "[if(contains(parameters('keyvaultName'), '[unique]'), replace(parameters('keyvaultName'), '[unique]', parameters('resourceGroupID')), parameters('keyvaultName'))]"
+                    }
+                },
+                "getValidKeyvaultName": {
+                    "parameters": [
+                        {
+                            "name": "keyvaultName",
+                            "type": "string"
+                        }
+                    ],
+                    "output": {
+                        "type": "string",
+                        "value": "[if(greater(length(parameters('keyvaultName')),24), concat(substring(parameters('keyvaultName'), 0, 24)), parameters('keyvaultName'))]"
+                    }
+                }
+            }
+        }
+    ],
+    "resources": [
+        {
+            "name": "[concat('FortigateHA-deploy-', parameters('fwObject').FortiGateName)]",
+            "type": "Microsoft.Resources/deployments",
+            "apiVersion": "2018-05-01",
+            "properties": {
+                "mode": "Incremental",
+                "parameters": {
+                    "fwObject": { "value": "[parameters('fwObject')]" },
+                    "containerSaSToken": {"value": "[parameters('containerSasToken')]"},
+                    "_artifactsLocation": {"value": "[parameters('_artifactsLocation')]"},
+                    "adminPassword": {
+                        "reference": {
+                            "keyVault": {
+                                "id": "[concat('/subscriptions/', subscription().subscriptionId, '/resourceGroups/', parameters('fwObject').vmKeyVault.keyVaultResourceGroupName, '/providers/Microsoft.KeyVault/vaults/', pspc.getValidKeyvaultName(pspc.getUniqueKeyvaultName(parameters('fwObject').vmKeyVault.keyVaultName, pspc.getResourceGroupID(parameters('fwObject').vmKeyVault.keyVaultResourceGroupName))))]"
+                            },
+                            "secretName": "[parameters('fwObject').adminSecret]"
+                        }
+                    },
+                },
+                "templateLink": {
+                    "uri": "[variables('baseVMUrl')]",
+                    "contentVersion": "1.0.0.0"
+                },
+                "debugSetting": {
+                    "detailLevel": "[parameters('_debugLevel')]"
+                }
+            }  
+        }
+    ],
+    "outputs": {}
+}
